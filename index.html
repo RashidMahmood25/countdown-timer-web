@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Countdown Timer</title>
+<style>
+  body { font-family: Arial, sans-serif; background: #EAF6FC; color: #0B1F3A; margin: 0; padding: 24px; }
+  .card { max-width: 640px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(11,31,58,.12); text-align: center; }
+  h1 { color: #1769AA; margin-top: 0; }
+  .display { display: flex; justify-content: center; gap: 12px; margin: 24px 0; flex-wrap: wrap; }
+  .unit { background: #0B1F3A; color: #fff; border-radius: 10px; padding: 16px 12px; min-width: 86px; }
+  .unit .num { font-size: 40px; font-weight: bold; line-height: 1; font-variant-numeric: tabular-nums; }
+  .unit .lbl { font-size: 13px; color: #20A4D8; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+  .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+  label { display: block; margin: 14px 0 6px; font-weight: bold; text-align: left; }
+  input { padding: 10px; font-size: 16px; border: 1px solid #64748B; border-radius: 8px; box-sizing: border-box; width: 100%; }
+  .field { flex: 1; min-width: 120px; }
+  button { margin-top: 16px; padding: 12px 20px; font-size: 16px; background: #1769AA; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+  button:hover { background: #20A4D8; }
+  button.secondary { background: #64748B; }
+  button.secondary:hover { background: #475569; }
+  button:disabled { background: #cbd5e1; cursor: not-allowed; }
+  .preset { background: #EAF6FC; color: #0B1F3A; border: 1px solid #20A4D8; padding: 8px 14px; font-size: 14px; margin-top: 8px; }
+  .preset:hover { background: #20A4D8; color: #fff; }
+  #status { margin-top: 18px; font-size: 18px; font-weight: bold; min-height: 24px; }
+  #status.done { color: #0a7a42; }
+  .bar-wrap { background: #EAF6FC; border-radius: 8px; height: 14px; overflow: hidden; margin-top: 16px; }
+  #bar { height: 100%; width: 0%; background: #20A4D8; transition: width 0.5s linear; }
+  .note { font-size: 14px; color: #64748B; margin-top: 16px; text-align: left; }
+  .tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 8px; }
+  .tab { background: #EAF6FC; color: #0B1F3A; border: 1px solid #20A4D8; padding: 10px 18px; font-size: 15px; margin-top: 0; }
+  .tab.active { background: #1769AA; color: #fff; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Countdown Timer</h1>
+  <p>Count down to a date/time, or start a timer for a set number of minutes.</p>
+
+  <div class="tabs">
+    <button type="button" class="tab active" id="tabDuration">Duration timer</button>
+    <button type="button" class="tab" id="tabDate">Count down to a date</button>
+  </div>
+
+  <div id="durationPane">
+    <div class="row">
+      <div class="field">
+        <label for="minutes">Minutes</label>
+        <input type="number" id="minutes" min="0" max="9999" value="10" step="1">
+      </div>
+      <div class="field">
+        <label for="seconds">Seconds</label>
+        <input type="number" id="seconds" min="0" max="59" value="0" step="1">
+      </div>
+    </div>
+    <div class="row">
+      <button type="button" class="preset" data-mins="5">5 min</button>
+      <button type="button" class="preset" data-mins="10">10 min</button>
+      <button type="button" class="preset" data-mins="25">25 min (Pomodoro)</button>
+      <button type="button" class="preset" data-mins="60">1 hour</button>
+    </div>
+  </div>
+
+  <div id="datePane" style="display:none;">
+    <label for="targetDate">Target date &amp; time</label>
+    <input type="datetime-local" id="targetDate">
+    <p class="note">Pick any future date and time — e.g. a match, an exam, or Eid.</p>
+  </div>
+
+  <div class="display" aria-live="polite">
+    <div class="unit"><div class="num" id="d">0</div><div class="lbl">Days</div></div>
+    <div class="unit"><div class="num" id="h">0</div><div class="lbl">Hours</div></div>
+    <div class="unit"><div class="num" id="m">0</div><div class="lbl">Minutes</div></div>
+    <div class="unit"><div class="num" id="s">0</div><div class="lbl">Seconds</div></div>
+  </div>
+  <div class="bar-wrap"><div id="bar"></div></div>
+
+  <div class="row">
+    <button type="button" id="startBtn">Start</button>
+    <button type="button" id="pauseBtn" class="secondary" disabled>Pause</button>
+    <button type="button" id="resetBtn" class="secondary">Reset</button>
+  </div>
+
+  <div id="status"></div>
+  <p class="note">The timer runs in this page only — it stops if you close or reload the tab.
+  When it finishes it shows "Time's up!" and plays a short beep (if your browser allows sound).</p>
+</div>
+
+<script>
+(function () {
+  var mode = 'duration';           // 'duration' or 'date'
+  var endTime = null;               // timestamp (ms) when the countdown ends
+  var totalMs = 0;                  // total length, for the progress bar
+  var remainingMs = 0;              // paused remainder
+  var timerId = null;
+  var audioCtx = null;
+
+  var dEl = document.getElementById('d');
+  var hEl = document.getElementById('h');
+  var mEl = document.getElementById('m');
+  var sEl = document.getElementById('s');
+  var barEl = document.getElementById('bar');
+  var statusEl = document.getElementById('status');
+  var startBtn = document.getElementById('startBtn');
+  var pauseBtn = document.getElementById('pauseBtn');
+  var resetBtn = document.getElementById('resetBtn');
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  function render(ms) {
+    if (ms < 0) ms = 0;
+    var totalSeconds = Math.floor(ms / 1000);
+    var days = Math.floor(totalSeconds / 86400);
+    var hours = Math.floor((totalSeconds % 86400) / 3600);
+    var minutes = Math.floor((totalSeconds % 3600) / 60);
+    var seconds = totalSeconds % 60;
+    dEl.textContent = days;
+    hEl.textContent = pad(hours);
+    mEl.textContent = pad(minutes);
+    sEl.textContent = pad(seconds);
+    if (totalMs > 0) {
+      barEl.style.width = (100 * (1 - ms / totalMs)).toFixed(1) + '%';
+    } else {
+      barEl.style.width = '0%';
+    }
+  }
+
+  function beep() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.frequency.value = 880; gain.gain.value = 0.15;
+      osc.start(); osc.stop(audioCtx.currentTime + 0.6);
+    } catch (e) { /* sound is optional */ }
+  }
+
+  function stopInterval() {
+    if (timerId !== null) { clearInterval(timerId); timerId = null; }
+  }
+
+  function tick() {
+    var ms = endTime - Date.now();
+    if (ms <= 0) {
+      stopInterval();
+      render(0);
+      statusEl.textContent = "Time's up!";
+      statusEl.className = 'done';
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      beep();
+      return;
+    }
+    render(ms);
+  }
+
+  function start() {
+    var now = Date.now();
+    if (remainingMs > 0) {
+      // resume from pause
+      endTime = now + remainingMs;
+      totalMs = totalMs || remainingMs;
+    } else if (mode === 'duration') {
+      var mins = parseInt(document.getElementById('minutes').value, 10) || 0;
+      var secs = parseInt(document.getElementById('seconds').value, 10) || 0;
+      totalMs = (mins * 60 + secs) * 1000;
+      if (totalMs <= 0) { statusEl.textContent = 'Please enter a duration greater than zero.'; return; }
+      endTime = now + totalMs;
+    } else {
+      var val = document.getElementById('targetDate').value;
+      if (!val) { statusEl.textContent = 'Please pick a target date and time first.'; return; }
+      endTime = new Date(val).getTime();
+      totalMs = endTime - now;
+      if (totalMs <= 0) { statusEl.textContent = 'That date is in the past — pick a future date.'; return; }
+    }
+    remainingMs = 0;
+    statusEl.textContent = '';
+    statusEl.className = '';
+    stopInterval();
+    tick();
+    timerId = setInterval(tick, 250);
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+  }
+
+  function pause() {
+    if (endTime === null) return;
+    stopInterval();
+    remainingMs = Math.max(0, endTime - Date.now());
+    render(remainingMs);
+    statusEl.textContent = 'Paused.';
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+  }
+
+  function reset() {
+    stopInterval();
+    endTime = null; totalMs = 0; remainingMs = 0;
+    render(0);
+    statusEl.textContent = '';
+    statusEl.className = '';
+    startBtn.disabled = false;
+    pauseBtn.disabled = true;
+  }
+
+  function setMode(next) {
+    mode = next;
+    reset();
+    document.getElementById('tabDuration').classList.toggle('active', next === 'duration');
+    document.getElementById('tabDate').classList.toggle('active', next === 'date');
+    document.getElementById('durationPane').style.display = next === 'duration' ? 'block' : 'none';
+    document.getElementById('datePane').style.display = next === 'date' ? 'block' : 'none';
+  }
+
+  document.getElementById('tabDuration').addEventListener('click', function () { setMode('duration'); });
+  document.getElementById('tabDate').addEventListener('click', function () { setMode('date'); });
+  startBtn.addEventListener('click', start);
+  pauseBtn.addEventListener('click', pause);
+  resetBtn.addEventListener('click', reset);
+
+  var presets = document.querySelectorAll('.preset');
+  for (var i = 0; i < presets.length; i++) {
+    presets[i].addEventListener('click', function () {
+      document.getElementById('minutes').value = this.getAttribute('data-mins');
+      document.getElementById('seconds').value = 0;
+    });
+  }
+
+  render(0);
+})();
+</script>
+</body>
+</html>
